@@ -1,0 +1,28 @@
+{
+  "server": {
+    "address": "127.0.0.1:51820",
+    "public_key": "7l4H+LJtcUo2mnZTAiv2Japjd2OoieTxIzZ+6HtnSVQ"
+  },
+  "private_key": "WtGs8GiI44OMaTfhPjrhRHI9y9H8X3FJ2igpiTRGSeI",
+  "tun": {
+    "enabled": false,
+    "name": "w1nwire0",
+    "address": "10.66.0.2/32",
+    "gateway": "10.66.0.1",
+    "mtu": 1420,
+    "configure_routes": false,
+    "route_all": false
+  },
+  "socks5": {
+    "enabled": true,
+    "listen": "127.0.0.1:1080"
+  },
+  "dns": "1.1.1.1",
+  "http": {
+    "metrics": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 9188
+    }
+  }
+}

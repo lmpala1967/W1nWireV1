@@ -1,0 +1,84 @@
+# Monitoring stack for W1nWire: Prometheus + Grafana.
+#
+#   docker compose -f monitoring/docker-compose.yml up -d
+#
+# Prometheus UI : http://localhost:9090
+# Grafana UI    : http://localhost:3000  (admin/admin — CHANGE THE PASSWORD!)
+#
+# The W1nWire server/client run natively on the host, Prometheus runs inside
+# Docker, hence the `host.docker.internal` host-gateway mapping below.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: w1nwire-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.listen-address=0.0.0.0:9090"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    # Allow Prometheus to reach the W1nWire server/client running on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - w1nwire-monitoring
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: w1nwire-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      # Default credentials are admin/admin.
+      # SECURITY: change the password immediately (or set GF_SECURITY_ADMIN_PASSWORD
+      # through an .env file that is NOT committed to git).
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana-dashboard.json:/var/lib/grafana/dashboards/w1nwire-overview.json:ro
+      - grafana-data:/var/lib/grafana
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - w1nwire-monitoring
+
+volumes:
+  prometheus-data:
+    name: w1nwire-prometheus-data
+  grafana-data:
+    name: w1nwire-grafana-data
+
+networks:
+  w1nwire-monitoring:
+    name: w1nwire-monitoring
+    driver: bridge

@@ -1,0 +1,225 @@
+# Alerting rules for W1nWire (Prometheus rule file format: groups -> rules).
+#
+# Loaded by `prometheus.yml` via `rule_files: ["alerts.yml"]`.
+# The same content can be wrapped into a PrometheusRule CRD for a Kubernetes
+# deployment (kind: PrometheusRule, apiVersion: monitoring.coreos.com/v1).
+
+groups:
+  # ---------------------------------------------------------------------
+  # Availability: is the service alive at all?
+  # ---------------------------------------------------------------------
+  - name: w1nwire_availability
+    interval: 30s
+    rules:
+      - alert: W1nWireServerDown
+        expr: up{job="w1nwire-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: w1nwire
+          component: server
+        annotations:
+          summary: "W1nWire server metrics endpoint is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }}:9187 for more than 2 minutes. Check that the server process is alive and that port 9187 is not blocked by the firewall."
+
+      - alert: W1nWireClientDown
+        expr: up{job="w1nwire-client"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: client
+        annotations:
+          summary: "W1nWire client metrics endpoint is down"
+          description: "Prometheus cannot scrape the client endpoint on {{ $labels.instance }}:9188 for more than 5 minutes."
+
+      - alert: W1nWireServerUnhealthy
+        expr: w1nwire_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: w1nwire
+          component: server
+        annotations:
+          summary: "W1nWire server reports itself as down"
+          description: "The server exposes w1nwire_up = 0, meaning an internal component (tun device, listener, crypto) failed."
+
+  # ---------------------------------------------------------------------
+  # Handshakes: is the protocol actually working?
+  # ---------------------------------------------------------------------
+  - name: w1nwire_handshakes
+    interval: 30s
+    rules:
+      - alert: W1nWireHandshakeFailureRate
+        expr: |
+          (
+            rate(w1nwire_handshakes_total{result="failed"}[5m])
+              /
+            clamp_min(rate(w1nwire_handshakes_total[5m]), 0.001)
+          ) > 0.2
+          and
+          sum(rate(w1nwire_handshakes_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          service: w1nwire
+          component: protocol
+        annotations:
+          summary: "High W1nWire handshake failure rate"
+          description: "More than 20% of handshakes fail on {{ $labels.instance }} (current ratio {{ $value | humanizePercentage }}). Check the client configuration, the server public key and the clock skew."
+
+      - alert: W1nWireHandshakesStalled
+        expr: sum(increase(w1nwire_handshakes_total[15m])) == 0
+        for: 15m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: protocol
+        annotations:
+          summary: "No handshakes performed in 15 minutes"
+          description: "No handshake (successful or failed) was recorded on {{ $labels.instance }} during the last 15 minutes. Clients may be unable to reach the server."
+
+      - alert: W1nWireHighHandshakeLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(w1nwire_handshake_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: protocol
+        annotations:
+          summary: "Handshake latency p95 is too high"
+          description: "The 95th percentile of the handshake duration on {{ $labels.instance }} is {{ $value | humanizeDuration }}, above the 1s budget."
+
+      - alert: W1nWireStaleHandshake
+        expr: (time() - w1nwire_last_handshake_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: protocol
+        annotations:
+          summary: "Stale handshake with peer {{ $labels.peer }}"
+          description: "The last successful handshake with peer {{ $labels.peer }} happened more than 5 minutes ago. The peer may be down or the tunnel is broken."
+
+  # ---------------------------------------------------------------------
+  # Sessions: are users actually connected?
+  # ---------------------------------------------------------------------
+  - name: w1nwire_sessions
+    interval: 30s
+    rules:
+      - alert: W1nWireNoActiveSessions
+        expr: w1nwire_sessions_active == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: server
+        annotations:
+          summary: "No active W1nWire sessions"
+          description: "The server on {{ $labels.instance }} has had zero active sessions for 10 minutes. Either every client disconnected or the session accounting is broken."
+
+      - alert: W1nWireSessionsDroppedToZero
+        expr: sum(w1nwire_sessions_active) == 0 and on() sum(w1nwire_peers_total{state="handshaked"}) > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: w1nwire
+          component: server
+        annotations:
+          summary: "Handshaked peers but zero sessions"
+          description: "{{ $labels.instance }} reports handshaked peers but zero active sessions — the tunnel data path is broken."
+
+      - alert: W1nWireClientDisconnected
+        expr: w1nwire_client_connected == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: client
+        annotations:
+          summary: "W1nWire client lost the server"
+          description: "The client reports no connection to peer {{ $labels.peer }}. The tunnel is down for this client."
+
+  # ---------------------------------------------------------------------
+  # Security: crypto anomalies.
+  # ---------------------------------------------------------------------
+  - name: w1nwire_security
+    interval: 30s
+    rules:
+      - alert: W1nWireReplayDetected
+        expr: increase(w1nwire_replay_dropped_total[5m]) > 0
+        labels:
+          severity: critical
+          service: w1nwire
+          component: crypto
+        annotations:
+          summary: "Replay packets dropped"
+          description: "{{ $value | printf \"%.0f\" }} replayed packets were dropped on {{ $labels.instance }} in the last 5 minutes. This may be a replay attack or a clock/sequence desynchronisation."
+
+      - alert: W1nWireDecryptErrors
+        expr: increase(w1nwire_decrypt_errors_total[5m]) > 0
+        labels:
+          severity: critical
+          service: w1nwire
+          component: crypto
+        annotations:
+          summary: "Packet decryption errors"
+          description: "{{ $value | printf \"%.0f\" }} packets failed to decrypt on {{ $labels.instance }} in the last 5 minutes. Check for key mismatches or tampering."
+
+      - alert: W1nWireCryptoErrorBurst
+        expr: rate(w1nwire_decrypt_errors_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          service: w1nwire
+          component: crypto
+        annotations:
+          summary: "Burst of decryption errors"
+          description: "Decryption failures are happening at {{ $value | printf \"%.2f\" }} packets/s on {{ $labels.instance }}."
+
+  # ---------------------------------------------------------------------
+  # Traffic: is data actually flowing?
+  # ---------------------------------------------------------------------
+  - name: w1nwire_traffic
+    interval: 30s
+    rules:
+      - alert: W1nWireTxTrafficIdle
+        expr: |
+          sum(rate(w1nwire_bytes_total{direction="tx"}[10m])) == 0
+            and on() (sum(w1nwire_sessions_active) > 0)
+        for: 30m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: tunnel
+        annotations:
+          summary: "Transmit traffic is flat while sessions are active"
+          description: "On {{ $labels.instance }} the tx byte rate has been zero for 30 minutes although sessions are still active. The tunnel is likely stuck."
+
+      - alert: W1nWireRxTrafficIdle
+        expr: |
+          sum(rate(w1nwire_bytes_total{direction="rx"}[10m])) == 0
+            and on() (sum(w1nwire_sessions_active) > 0)
+        for: 30m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: tunnel
+        annotations:
+          summary: "Receive traffic is flat while sessions are active"
+          description: "On {{ $labels.instance }} the rx byte rate has been zero for 30 minutes although sessions are still active."
+
+      - alert: W1nWireNoPeersHandshaked
+        expr: sum(w1nwire_peers_total{state="handshaked"}) == 0
+        for: 15m
+        labels:
+          severity: warning
+          service: w1nwire
+          component: protocol
+        annotations:
+          summary: "No peer is in the handshaked state"
+          description: "On {{ $labels.instance }} no peer reached the \"handshaked\" state during the last 15 minutes."

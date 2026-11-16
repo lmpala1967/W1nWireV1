@@ -1,0 +1,79 @@
+# =============================================================================
+# W1nWire — systemd unit for the VPN client.
+#
+# The client unit is installed on the *client* machine (laptop, phone, VPS…),
+# not on the server. `deploy/scripts/bootstrap-local.sh` can install it on a
+# local development box as well.
+#
+# It expects:
+#   /etc/w1nwire/client.json  — client configuration (JSON), created with
+#                                `deploy/scripts/make-client-conf.sh`
+#   /etc/w1nwire/client.env   — optional environment overrides (KEY=value)
+#   /opt/w1nwire/bin/w1nwire-client — the compiled client binary
+#
+# The unprivileged system user has to exist before the unit is started:
+#
+#   sudo useradd --system --home-dir /var/lib/w1nwire \
+#        --shell /usr/sbin/nologin w1nwire
+#
+# Like the server, the client needs CAP_NET_ADMIN to create the TUN device.
+# =============================================================================
+
+[Unit]
+Description=W1nWire VPN client (custom UDP protocol)
+Documentation=https://github.com/w1nchi/w1nwire
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/w1nwire/client.json
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=w1nwire
+Group=w1nwire
+
+EnvironmentFile=-/etc/w1nwire/client.env
+
+ExecStart=/opt/w1nwire/bin/w1nwire-client --config /etc/w1nwire/client.json
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+
+# --- Kernel tunables ---------------------------------------------------------
+LimitNOFILE=1048576
+LimitNPROC=512
+LimitMEMLOCK=infinity
+TasksMax=512
+
+# --- Security hardening ------------------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_UNIX
+SystemCallArchitectures=native
+
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+StateDirectory=w1nwire
+RuntimeDirectory=w1nwire
+ReadWritePaths=/etc/w1nwire /var/lib/w1nwire /run/w1nwire
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,67 @@
+# Prometheus scrape configuration for W1nWire.
+#
+# ---------------------------------------------------------------------------
+# Where to run this Prometheus
+# ---------------------------------------------------------------------------
+# This file is meant to be used by the Prometheus instance that ships in
+# `monitoring/docker-compose.yml` (Prometheus runs inside a container, the
+# W1nWire server runs natively on the host).
+#
+# Because Prometheus runs inside a container while W1nWire runs on the host
+# (Windows host in the dev setup), the host is reached through the special
+# Docker name `host.docker.internal`, which is mapped to the host gateway via
+# `extra_hosts: ["host.docker.internal:host-gateway"]` in docker-compose.yml.
+#
+# If you instead run Prometheus natively on the SAME machine as the server,
+# replace `host.docker.internal:9187` with `localhost:9187`.
+# If Prometheus runs on a DIFFERENT machine, replace it with the LAN address
+# of the server, e.g. `192.168.1.10:9187`.
+# ---------------------------------------------------------------------------
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "w1nwire"
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # W1nWire server metrics endpoint (default :9187/metrics).
+  - job_name: "w1nwire-server"
+    metrics_path: "/metrics"
+    scheme: "http"
+    scrape_interval: 10s
+    scrape_timeout: 8s
+    static_configs:
+      - targets:
+          - "host.docker.internal:9187"
+        labels:
+          instance: "w1nwire-server"
+          role: "server"
+
+  # W1nWire client metrics endpoint (default :9188/metrics).
+  # The client is expected to be reachable by the container name
+  # "w1nwire-client" (docker-compose service name or `docker run --name`).
+  # If the client runs on the host instead, use "host.docker.internal:9188".
+  - job_name: "w1nwire-client"
+    metrics_path: "/metrics"
+    scheme: "http"
+    scrape_interval: 10s
+    scrape_timeout: 8s
+    static_configs:
+      - targets:
+          - "w1nwire-client:9188"
+        labels:
+          instance: "w1nwire-client"
+          role: "client"
+
+  # Optional: the W1nWire server can also be scraped directly by hostname
+  # when it runs inside the same compose network. Uncomment if you deploy
+  # the server as a compose service named "w1nwire-server".
+  # - job_name: "w1nwire-server-compose"
+  #   metrics_path: "/metrics"
+  #   static_configs:
+  #     - targets: ["w1nwire-server:9187"]

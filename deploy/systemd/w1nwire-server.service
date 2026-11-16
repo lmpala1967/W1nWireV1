@@ -1,0 +1,109 @@
+# =============================================================================
+# W1nWire — systemd unit for the VPN server.
+#
+# Installed to /etc/systemd/system/w1nwire-server.service by deploy/install.sh.
+# Keep this file and the copy embedded in deploy/install.sh in sync.
+#
+# WHY ROOT AND NOT User=w1nwire
+# -----------------------------
+# The daemon does two things that need privileges:
+#
+#   1. it opens /dev/net/tun and configures the interface (CAP_NET_ADMIN),
+#   2. it shells out to `ip`, `iptables` and `sysctl` (internal/tun) so the
+#      masquerading and forwarding rules exist even if the operator never ran
+#      install.sh.
+#
+# Running it as an unprivileged user would need an udev rule for /dev/net/tun,
+# write access to /run/xtables.lock, and CAP_NET_ADMIN in the ambient set -
+# while `sysctl -w net.ipv4.ip_forward=1` needs write access to /proc/sys,
+# which the hardening options below would have to re-open anyway. Root with a
+# frozen filesystem, no new privileges, no home directory, no kernel module
+# access and a private /tmp is the smaller, more auditable surface. The binary
+# is a static Go program whose only input is /etc/w1nwire/server.json.
+# =============================================================================
+
+[Unit]
+Description=W1nWire VPN server
+Documentation=https://github.com/w1nchi/w1nwire
+After=network-online.target
+Wants=network-online.target
+
+# Never start without a configuration: a missing or half-written server.json
+# must not turn into a restart loop.
+ConditionPathExists=/etc/w1nwire/server.json
+
+# Stop restarting after five failures in five minutes instead of hammering.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# The configuration path is the only argument; everything else is inside the
+# JSON file (listen address, TUN, NAT, metrics, peers).
+ExecStart=/usr/local/bin/w1nwire-server -config /etc/w1nwire/server.json
+
+# A VPN server must come back by itself. SIGTERM lets the process close the
+# UDP socket and the TUN device; there is no SIGHUP reload, use
+# `systemctl restart w1nwire-server` after editing server.json.
+Restart=always
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+
+# Logs go to the journal only - no file to rotate, no /var/log to manage.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=w1nwire-server
+
+# --- Hardening ---------------------------------------------------------------
+# The process can allocate executable memory only through its own text segment;
+# it never drops privileges, never creates namespaces and never touches the
+# kernel below /proc/sys (except when it re-applies the forwarding sysctl).
+NoNewPrivileges=yes
+
+# /usr, /boot and /etc are read only for the service. The configuration is
+# written by `w1nwire-server peer add` (run by the operator, not by the unit),
+# so the service itself never needs to write there.
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+# No module loading, no control-group games, no clock or hostname changes.
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+# Plain UDP plus AF_NETLINK for the interface configuration, AF_UNIX for
+# journald. Nothing else is needed.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# CAP_NET_ADMIN  create/configure the TUN device, run iptables, write the
+#                forwarding sysctl
+# CAP_NET_BIND_SERVICE  unlikely to be needed (UDP 51820 is unprivileged) but
+#                harmless and keeps a future privileged port working
+# CAP_DAC_OVERRIDE  keep reading root-only files regardless of their mode
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+# ProtectKernelTunables is deliberately NOT set: at startup the server applies
+# `sysctl -w net.ipv4.ip_forward=1` through internal/tun, and a read-only
+# /proc/sys would make that call fail (the server only logs a warning, but the
+# forwarding would silently stay off on a fresh boot).
+
+# --- Limits ------------------------------------------------------------------
+LimitNOFILE=1048576
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

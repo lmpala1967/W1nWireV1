@@ -1,0 +1,72 @@
+# =============================================================================
+# W1nWire — example Terraform variables.
+#
+# Copy this file to `terraform.tfvars` (which is git-ignored) and fill in the
+# values:
+#
+#     cp terraform.tfvars.example terraform.tfvars
+#
+# Nothing in this file is a secret: OCIDs are account identifiers, not
+# credentials, and only the *public* SSH key is used.
+# =============================================================================
+
+# --- Account -----------------------------------------------------------------
+
+# Region to deploy into. ARM (A1.Flex) capacity is scarce — try several.
+region = "eu-frankfurt-1"
+
+# OCID of the compartment that will hold the resources (the tenancy root
+# compartment works as well).
+compartment_ocid = "ocid1.compartment.oc1..examplecompartmentxxxxxxxxxxxx"
+
+# OCID of the tenancy (root account).
+tenancy = "ocid1.tenancy.oc1..example tenancyxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# --- Naming ------------------------------------------------------------------
+
+project_name = "w1nwire"
+
+# --- Access ------------------------------------------------------------------
+
+# Public SSH key that is installed into the instance. Generate one with:
+#     ssh-keygen -t ed25519 -f ~/.ssh/w1nwire_oracle -C "w1nwire-oracle"
+ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyReplaceMe w1nwire-oracle"
+
+# TODO: restrict SSH to your own address once the instance exists, e.g.
+#   allowed_ssh_cidr = "203.0.113.7/32"
+allowed_ssh_cidr = "0.0.0.0/0"
+
+# --- Compute -----------------------------------------------------------------
+
+# Always Free options:
+#   VM.Standard.A1.Flex     — 4 OCPU / 24 GB, best performance, often no capacity.
+#   VM.Standard.E2.1.Micro  — AMD micro, always available, 1 GB RAM.
+instance_shape = "VM.Standard.A1.Flex"
+
+# Only used by Flex shapes.
+instance_ocpus    = 2
+instance_memory_gb = 12
+
+# Always Free block volume allowance is 200 GB per tenancy.
+boot_volume_size_gbs = 50
+
+# --- Application -------------------------------------------------------------
+
+# UDP port of the custom W1nWire protocol.
+vpn_port = 51820
+
+# IPv4 network used inside the tunnel.
+tunnel_cidr = "10.66.0.0/24"
+
+# Name of the TUN device created by the server.
+tun_interface = "w1n0"
+
+# Git repository that is cloned on the instance. Leave empty to use the
+# pre-uploaded tarball /opt/w1nchi/w1nwire-src.tar.gz instead.
+repo_url    = "https://github.com/<your-account>/W1nWire.git"
+repo_branch = "main"
+
+# --- Misc --------------------------------------------------------------------
+
+# Keep the instance "busy" so that OCI does not reclaim it as idle.
+install_keepalive = true

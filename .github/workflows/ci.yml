@@ -1,0 +1,199 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The Go version is the one declared in go.mod, so that the local
+      # toolchain and CI can never drift apart.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify module tidiness
+        run: go mod tidy -diff
+        shell: bash
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test with race detector and coverage
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Check gofmt formatting
+        run: |
+          unformatted="$(gofmt -l . 2>&1)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            echo "Run 'make fmt' to fix them."
+            exit 1
+          fi
+          echo "All Go files are gofmt-formatted."
+        shell: bash
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        continue-on-error: true
+        with:
+          version: latest
+          args: --timeout=5m
+
+  desktop:
+    # The Windows application is the main deliverable of the project: build it
+    # on every change, with its icon and its manifest, so that a broken
+    # resource or a WebView2 binding cannot slip through.
+    name: Windows desktop build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Generate the Windows resources
+        run: |
+          cd cmd/w1nwire-desktop
+          go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --out rsrc \
+            --manifest gui --icon ../../packaging/icon/w1nwire.ico \
+            --product-version 0.0.0-ci --file-version 0.0.0-ci \
+            --file-description "W1nWire VPN client" --product-name "W1nWire"
+
+      - name: Build w1nwire-desktop.exe
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          go build -trimpath -buildvcs=false \
+            -ldflags "-s -w -H windowsgui -X main.version=0.0.0-ci" \
+            -o dist/w1nwire-desktop.exe ./cmd/w1nwire-desktop
+
+      - name: Upload the desktop artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: w1nwire-desktop-windows-amd64
+          path: dist/w1nwire-desktop.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  server:
+    name: Server build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # arm64 is required: the Oracle Cloud Ampere shapes are aarch64.
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build the server and the command line client
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          out="dist/${GOOS}-${GOARCH}"
+          mkdir -p "$out"
+          go build -trimpath -ldflags "-s -w" -o "${out}/w1nwire-server" ./cmd/w1nwire-server
+          go build -trimpath -ldflags "-s -w" -o "${out}/w1nwire-client" ./cmd/w1nwire-client
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: w1nwire-server-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/${{ matrix.goos }}-${{ matrix.goarch }}/*
+          if-no-files-found: error
+          retention-days: 14
+
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        # continue-on-error: the Dockerfile is a convenience for the server,
+        # a broken image must not block the test pipeline.
+        uses: docker/build-push-action@v6
+        continue-on-error: true
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: false
+          tags: w1nwire:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

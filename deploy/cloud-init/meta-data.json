@@ -1,0 +1,7 @@
+{
+  "instance-id": "w1nwire-0001",
+  "local-hostname": "w1nwire",
+  "public-keys": {
+    "w1nwire-oracle": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIReplaceMeWithYourOwnPublicKey w1nwire-oracle"
+  }
+}

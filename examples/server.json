@@ -1,0 +1,31 @@
+{
+  "listen": "0.0.0.0:51820",
+  "server_private_key": "w3S9ujqRRFgNGTLXfFFtsJnZwGmYN7Tv1TocTA4GBPU",
+  "tun": {
+    "enabled": true,
+    "name": "w1nwire0",
+    "address": "10.66.0.1/24",
+    "mtu": 1420
+  },
+  "nat": {
+    "enabled": true,
+    "outbound_interface": ""
+  },
+  "http": {
+    "metrics": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 9187
+    }
+  },
+  "peers": [
+    {
+      "id": "demo-peer",
+      "public_key": "f7rLhA46vSD3noDlHfxJsdjaWZGObJaaDPBwtyolg20",
+      "tunnel_address": "10.66.0.2",
+      "allowed_ips": [
+        "10.66.0.2/32"
+      ]
+    }
+  ]
+}

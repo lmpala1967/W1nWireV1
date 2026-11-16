@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0A0C11">
+  <title>W1nWire</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand" aria-label="W1nWire">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="32" height="32" fill="none">
+            <rect x="3" y="3" width="26" height="26" rx="8" stroke="currentColor" stroke-width="2"/>
+            <path d="M8.4 11.6 11.35 21l4.65-7.4L20.65 21l2.95-9.4" stroke="currentColor" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="25.2" cy="7" r="1.35" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="brand-text">W1nWire</span>
+      </div>
+
+      <nav class="nav" aria-label="Основная навигация" id="mainNav">
+        <button class="nav-item is-active" type="button" data-view="connect" aria-current="page">
+          <span class="nav-icon" data-icon="power"></span>
+          <span data-i18n="nav.connect">Подключение</span>
+        </button>
+        <button class="nav-item" type="button" data-view="servers">
+          <span class="nav-icon" data-icon="servers"></span>
+          <span data-i18n="nav.servers">Серверы</span>
+        </button>
+        <button class="nav-item" type="button" data-view="settings">
+          <span class="nav-icon" data-icon="sliders"></span>
+          <span data-i18n="nav.settings">Настройки</span>
+        </button>
+        <button class="nav-item" type="button" data-view="logs">
+          <span class="nav-icon" data-icon="terminal"></span>
+          <span data-i18n="nav.logs">Журнал</span>
+        </button>
+        <button class="nav-item" type="button" data-view="about">
+          <span class="nav-icon" data-icon="info"></span>
+          <span data-i18n="nav.about">О программе</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="protocol-card">
+          <div class="protocol-head">
+            <span class="protocol-pulse" aria-hidden="true"></span>
+            <span class="protocol-name">W1nWire v1</span>
+          </div>
+          <div class="protocol-desc" data-i18n="sidebar.protocol">Собственный протокол</div>
+          <div class="protocol-version">
+            <span data-i18n="sidebar.version">Версия</span>
+            <span class="mono" id="appVersion">2.0.0</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-inner" id="topbarInner"></div>
+      </header>
+      <main class="content" id="viewRoot" tabindex="-1">
+        <div class="boot-screen" aria-hidden="true">
+          <div class="boot-orb"></div>
+          <div class="boot-line"></div>
+          <div class="boot-line short"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div class="toast-stack" id="toastRoot" aria-live="polite" aria-atomic="false"></div>
+  <div class="sr-only" id="liveRegion" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
